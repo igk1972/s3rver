@@ -3,12 +3,15 @@
 const AWS = require('aws-sdk');
 const { expect } = require('chai');
 const express = require('express');
+const FormData = require('form-data');
 const fs = require('fs-extra');
 const { find, times } = require('lodash');
 const md5 = require('md5');
 const moment = require('moment');
 const pMap = require('p-map');
-const request = require('request-promise-native');
+const request = require('request-promise-native').defaults({
+  resolveWithFullResponse: true
+});
 
 const S3rver = require('../..');
 
@@ -166,10 +169,8 @@ describe('Operations on Objects', () => {
         Bucket: 'bucket-a',
         Key: 'image',
       });
-      const res = await request({
-        url,
+      const res = await request(url, {
         headers: { range: 'bytes=0-99' },
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(206);
       expect(res.headers).to.have.property('content-range');
@@ -195,16 +196,14 @@ describe('Operations on Objects', () => {
 
       let error;
       try {
-        await request({
-          url,
+        await request(url, {
           headers: { range: `bytes=${filesize + 100}-${filesize + 200}` },
-          resolveWithFullResponse: true,
         });
       } catch (err) {
         error = err;
       }
       expect(error).to.exist;
-      expect(error.statusCode).to.equal(416);
+      expect(error.response.statusCode).to.equal(416);
     });
 
     it('returns actual length of data for partial out of bounds range requests', async function() {
@@ -222,10 +221,8 @@ describe('Operations on Objects', () => {
         Bucket: 'bucket-a',
         Key: 'image',
       });
-      const res = await request({
-        url,
+      const res = await request(url, {
         headers: { range: 'bytes=0-100000' },
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(206);
       expect(res.headers).to.have.property('content-range');
@@ -330,14 +327,13 @@ describe('Operations on Objects', () => {
   describe('POST Object', () => {
     it('stores a text object for a multipart/form-data request', async function() {
       const file = require.resolve('../fixtures/post_file.txt');
-      const res = await request.post({
+      const form = new FormData();
+      form.append('key', 'text');
+      form.append('file', fs.createReadStream(file));
+      const res = await request.post('bucket-a', {
         baseUrl: s3Client.config.endpoint,
-        uri: 'bucket-a',
-        formData: {
-          key: 'text',
-          file: fs.createReadStream(file),
-        },
-        resolveWithFullResponse: true,
+        body: form,
+        headers: form.getHeaders(),
       });
       expect(res.statusCode).to.equal(201);
       const object = await s3Client
@@ -436,12 +432,9 @@ describe('Operations on Objects', () => {
     });
 
     it('stores a text object with no content type and retrieves it', async function() {
-      const res = await request({
-        method: 'PUT',
+      const res = await request.put('bucket-a/text', {
         baseUrl: s3Client.config.endpoint,
-        url: `bucket-a/text`,
         body: 'Hello!',
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(200);
       const data = await s3Client

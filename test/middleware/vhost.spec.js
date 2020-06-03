@@ -5,7 +5,9 @@ const xmlParser = require('fast-xml-parser');
 const { zip } = require('lodash');
 const he = require('he');
 const moment = require('moment');
-const request = require('request-promise-native');
+const request = require('request-promise-native').defaults({
+  resolveWithFullResponse: true
+});
 
 const { createServerAndClient } = require('../helpers');
 
@@ -20,19 +22,17 @@ describe('Virtual Host resolution', () => {
   });
 
   it('reaches the server with a bucket subdomain', async function() {
-    const body = await request({
-      url: s3Client.endpoint,
+    const res = await request(s3Client.config.endpoint, {
       headers: { host: 'bucket0.s3.amazonaws.com' },
     });
-    expect(body).to.include(`<Name>bucket0</Name>`);
+    expect(res.body).to.include(`<Name>bucket0</Name>`);
   });
 
   it('reaches the server with a bucket vhost', async function() {
-    const body = await request({
-      url: s3Client.endpoint,
+    const res = await request(s3Client.config.endpoint, {
       headers: { host: 'bucket0' },
     });
-    expect(body).to.include(`<Name>bucket0</Name>`);
+    expect(res.body).to.include(`<Name>bucket0</Name>`);
   });
 
   it('lists buckets at a custom service endpoint', async function() {
@@ -40,11 +40,10 @@ describe('Virtual Host resolution', () => {
       serviceEndpoint: 'example.com',
       configureBuckets: buckets,
     });
-    const res = await request({
-      url: s3Client.config.endpoint,
+    const res = await request(s3Client.config.endpoint, {
       headers: { host: 's3.example.com' },
     });
-    const parsedBody = xmlParser.parse(res, {
+    const parsedBody = xmlParser.parse(res.body, {
       tagValueProcessor: a => he.decode(a),
     });
     expect(parsedBody).to.haveOwnProperty('ListAllMyBucketsResult');
@@ -62,11 +61,10 @@ describe('Virtual Host resolution', () => {
       serviceEndpoint: 'example.com',
       configureBuckets: buckets,
     });
-    const res = await request({
-      url: s3Client.config.endpoint,
+    const res = await request(s3Client.config.endpoint, {
       headers: { host: 'bucket0.s3.example.com' },
     });
-    const parsedBody = xmlParser.parse(res, {
+    const parsedBody = xmlParser.parse(res.body, {
       tagValueProcessor: a => he.decode(a),
     });
     expect(parsedBody.ListBucketResult.Name).to.equal('bucket0');

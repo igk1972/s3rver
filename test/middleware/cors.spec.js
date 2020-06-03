@@ -3,7 +3,9 @@
 const AWS = require('aws-sdk');
 const { expect } = require('chai');
 const fs = require('fs-extra');
-const request = require('request-promise-native');
+const request = require('request-promise-native').defaults({
+  resolveWithFullResponse: true
+});
 
 const S3rver = require('../..');
 
@@ -140,10 +142,8 @@ describe('CORS Policy Tests', function() {
         Bucket: bucket.name,
         Key: 'image',
       });
-      const res = await request({
-        url,
+      const res = await request(url, {
         headers: { origin },
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(200);
       expect(res.headers).to.have.property('access-control-allow-origin', '*');
@@ -178,10 +178,8 @@ describe('CORS Policy Tests', function() {
         Bucket: buckets[0].name,
         Key: 'image',
       });
-      const res = await request({
-        url,
+      const res = await request(url, {
         headers: { origin },
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(200);
       expect(res.headers).to.have.property(
@@ -219,10 +217,8 @@ describe('CORS Policy Tests', function() {
         Bucket: buckets[0].name,
         Key: 'image',
       });
-      const res = await request({
-        url,
+      const res = await request(url, {
         headers: { origin },
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(200);
       expect(res.headers).to.have.property(
@@ -260,10 +256,8 @@ describe('CORS Policy Tests', function() {
         Bucket: buckets[0].name,
         Key: 'image',
       });
-      const res = await request({
-        url,
+      const res = await request(url, {
         headers: { origin },
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(200);
       expect(res.headers).to.not.have.property('access-control-allow-origin');
@@ -298,10 +292,8 @@ describe('CORS Policy Tests', function() {
         Bucket: buckets[0].name,
         Key: 'image',
       });
-      const res = await request({
-        url,
+      const res = await request(url, {
         headers: { origin, range: 'bytes=0-99' },
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(206);
       expect(res.headers).to.have.property(
@@ -331,15 +323,13 @@ describe('CORS Policy Tests', function() {
       Key: 'image',
     });
     try {
-      const res = await request({
+      const res = await request(url, {
         method: 'OPTIONS',
-        url,
         headers: {
           origin,
           'Access-Control-Request-Method': 'GET',
           'Access-Control-Request-Headers': 'Range, Authorization',
         },
-        resolveWithFullResponse: true,
       });
       expect(res.statusCode).to.equal(200);
       expect(res.headers).to.have.property('access-control-allow-origin', '*');
@@ -371,9 +361,8 @@ describe('CORS Policy Tests', function() {
     });
     let error;
     try {
-      await request({
+      await request(url, {
         method: 'OPTIONS',
-        url,
         headers: {
           origin,
           'Access-Control-Request-Method': 'GET',
@@ -386,7 +375,7 @@ describe('CORS Policy Tests', function() {
       await server.close();
     }
     expect(error).to.exist;
-    expect(error.statusCode).to.equal(403);
+    expect(error.response.statusCode).to.equal(403);
   });
 
   it('responds to OPTIONS requests with a Forbidden response when CORS is disabled', async function() {
@@ -409,14 +398,12 @@ describe('CORS Policy Tests', function() {
     });
     let error;
     try {
-      await request({
+      await request(url, {
         method: 'OPTIONS',
-        url,
         headers: {
           origin,
           'Access-Control-Request-Method': 'GET',
         },
-        resolveWithFullResponse: true,
       });
     } catch (err) {
       error = err;
@@ -424,7 +411,7 @@ describe('CORS Policy Tests', function() {
       await server.close();
     }
     expect(error).to.exist;
-    expect(error.statusCode).to.equal(403);
+    expect(error.response.statusCode).to.equal(403);
   });
 
   it('responds correctly to OPTIONS requests that dont specify access-control-request-headers', async function() {
@@ -445,9 +432,8 @@ describe('CORS Policy Tests', function() {
       Key: 'image',
     });
     try {
-      await request({
+      await request(url, {
         method: 'OPTIONS',
-        url,
         headers: {
           origin,
           'Access-Control-Request-Method': 'GET',

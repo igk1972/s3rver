@@ -2,7 +2,9 @@
 
 const { expect } = require('chai');
 const fs = require('fs-extra');
-const request = require('request-promise-native');
+const request = require('request-promise-native').defaults({
+  resolveWithFullResponse: true,
+});
 
 const { createServerAndClient } = require('../helpers');
 
@@ -54,30 +56,28 @@ describe('Static Website Tests', function() {
   });
 
   it('fails to read an object at the website endpoint from a bucket with no website configuration', async function() {
-    let error;
+    await s3Client
+      .putObject({
+        Bucket: 'bucket-a',
+        Key: 'page/index.html',
+        Body: '<html><body>Hello</body></html>',
+      })
+      .promise();
+    let res;
     try {
-      await s3Client
-        .putObject({
-          Bucket: 'bucket-a',
-          Key: 'page/index.html',
-          Body: '<html><body>Hello</body></html>',
-        })
-        .promise();
-      await request({
+      res = await request('page/', {
         baseUrl: s3Client.config.endpoint,
-        uri: 'page/',
         headers: { host: `bucket-a.s3-website-us-east-1.amazonaws.com` },
       });
     } catch (err) {
-      error = err;
+      res = err.response;
     }
-    expect(error).to.exist;
-    expect(error.statusCode).to.equal(404);
-    expect(error.response.headers).to.have.property(
+    expect(res.statusCode).to.equal(404);
+    expect(res.headers).to.have.property(
       'content-type',
       'text/html; charset=utf-8',
     );
-    expect(error.response.body).to.contain('Code: NoSuchWebsiteConfiguration');
+    expect(res.body).to.contain('Code: NoSuchWebsiteConfiguration');
   });
 
   it('returns an index page at / path', async function() {
@@ -89,29 +89,26 @@ describe('Static Website Tests', function() {
         Body: expectedBody,
       })
       .promise();
-    const body = await request({
+    const res = await request('website0/', {
       baseUrl: s3Client.config.endpoint,
-      uri: 'website0/',
       headers: { accept: 'text/html' },
     });
-    expect(body).to.equal(expectedBody);
+    expect(res.body).to.equal(expectedBody);
   });
 
   it('allows redirects for image requests', async function() {
-    let error;
+    let res;
     try {
-      await request({
+      res = await request('website3/complex/image.png', {
         baseUrl: s3Client.config.endpoint,
-        uri: `website3/complex/image.png`,
         headers: { accept: 'image/png' },
         followRedirect: false,
       });
     } catch (err) {
-      error = err;
+      res = err.response;
     }
-    expect(error).to.exist;
-    expect(error.statusCode).to.equal(307);
-    expect(error.response.headers).to.have.property(
+    expect(res.statusCode).to.equal(307);
+    expect(res.headers).to.have.property(
       'location',
       'https://custom/replacement',
     );
@@ -126,12 +123,11 @@ describe('Static Website Tests', function() {
         Body: expectedBody,
       })
       .promise();
-    const body = await request({
+    const res = await request('website0/page/', {
       baseUrl: s3Client.config.endpoint,
-      uri: 'website0/page/',
       headers: { accept: 'text/html' },
     });
-    expect(body).to.equal(expectedBody);
+    expect(res.body).to.equal(expectedBody);
   });
 
   it('does not return an index page at /page/ path if an object is stored with a trailing /', async function() {
@@ -152,83 +148,71 @@ describe('Static Website Tests', function() {
       })
       .promise();
 
-    const body = await request({
+    const res = await request('website0/page/', {
       baseUrl: s3Client.config.endpoint,
-      uri: 'website0/page/',
       headers: { accept: 'text/html' },
     });
-    expect(body).to.equal(expectedBody);
+    expect(res.body).to.equal(expectedBody);
   });
 
   it('redirects with a 302 status at /page path', async function() {
-    let error;
+    const body = '<html><body>Hello</body></html>';
+    await s3Client
+      .putObject({
+        Bucket: 'website0',
+        Key: 'page/index.html',
+        Body: body,
+      })
+      .promise();
+    let res;
     try {
-      const body = '<html><body>Hello</body></html>';
-      await s3Client
-        .putObject({
-          Bucket: 'website0',
-          Key: 'page/index.html',
-          Body: body,
-        })
-        .promise();
-      await request({
+      res = await request('website0/page', {
         baseUrl: s3Client.config.endpoint,
-        uri: 'website0/page',
         headers: { accept: 'text/html' },
         followRedirect: false,
       });
     } catch (err) {
-      error = err;
+      res = err.response;
     }
-    expect(error).to.exist;
-    expect(error.statusCode).to.equal(302);
-    expect(error.response.headers).to.have.property(
-      'location',
-      '/website0/page/',
-    );
+    expect(res.statusCode).to.equal(302);
+    expect(res.headers).to.have.property('location', '/website0/page/');
   });
 
   it('redirects with 302 status at /page path for subdomain-style bucket', async function() {
     const body = '<html><body>Hello</body></html>';
-    let error;
+    await s3Client
+      .putObject({
+        Bucket: 'website0',
+        Key: 'page/index.html',
+        Body: body,
+      })
+      .promise();
+    let res;
     try {
-      await s3Client
-        .putObject({
-          Bucket: 'website0',
-          Key: 'page/index.html',
-          Body: body,
-        })
-        .promise();
-      await request({
+      res = await request('page', {
         baseUrl: s3Client.config.endpoint,
-        uri: 'page',
-        headers: {
-          host: 'website0.s3-website-us-east-1.amazonaws.com',
-        },
+        headers: { host: 'website0.s3-website-us-east-1.amazonaws.com' },
         followRedirect: false,
       });
     } catch (err) {
-      error = err;
+      res = err.response;
     }
-    expect(error).to.exist;
-    expect(error.statusCode).to.equal(302);
-    expect(error.response.headers).to.have.property('location', '/page/');
+    expect(res.statusCode).to.equal(302);
+    expect(res.headers).to.have.property('location', '/page/');
   });
 
   it('returns a HTML 404 error page', async function() {
-    let error;
+    let res;
     try {
-      await request({
+      res = await request('website0/page/not-exists', {
         baseUrl: s3Client.config.endpoint,
-        uri: 'website0/page/not-exists',
         headers: { accept: 'text/html' },
       });
     } catch (err) {
-      error = err;
+      res = err.response;
     }
-    expect(error).to.exist;
-    expect(error.statusCode).to.equal(404);
-    expect(error.response.headers).to.have.property(
+    expect(res.statusCode).to.equal(404);
+    expect(res.headers).to.have.property(
       'content-type',
       'text/html; charset=utf-8',
     );
@@ -236,30 +220,28 @@ describe('Static Website Tests', function() {
 
   it('serves a custom error page if it exists', async function() {
     const body = '<html><body>Oops!</body></html>';
-    let error;
+    await s3Client
+      .putObject({
+        Bucket: 'website1',
+        Key: 'error.html',
+        Body: body,
+        ContentType: 'text/html',
+      })
+      .promise();
+    let res;
     try {
-      await s3Client
-        .putObject({
-          Bucket: 'website1',
-          Key: 'error.html',
-          Body: body,
-          ContentType: 'text/html',
-        })
-        .promise();
-      await request({
+      res = await request('website1/page/not-exists', {
         baseUrl: s3Client.config.endpoint,
-        uri: 'website1/page/not-exists',
         headers: { accept: 'text/html' },
       });
     } catch (err) {
-      error = err;
+      res = err.response;
     }
-    expect(error).to.exist;
-    expect(error.response.headers).to.have.property(
+    expect(res.headers).to.have.property(
       'content-type',
       'text/html; charset=utf-8',
     );
-    expect(error.response.body).to.equal(body);
+    expect(res.body).to.equal(body);
   });
 
   it('returns a XML error document for SDK requests', async function() {
@@ -300,119 +282,103 @@ describe('Static Website Tests', function() {
 
   it('redirects for an object stored with a website-redirect-location', async function() {
     const redirectLocation = 'https://github.com/jamhall/s3rver';
-    let error;
+    await s3Client
+      .putObject({
+        Bucket: 'website0',
+        Key: 'index.html',
+        Body: '<html><body>Hello</body></html>',
+        WebsiteRedirectLocation: redirectLocation,
+      })
+      .promise();
+    let res;
     try {
-      await s3Client
-        .putObject({
-          Bucket: 'website0',
-          Key: 'index.html',
-          Body: '<html><body>Hello</body></html>',
-          WebsiteRedirectLocation: redirectLocation,
-        })
-        .promise();
-      await request({
+      res = await request(`website0/`, {
         baseUrl: s3Client.config.endpoint,
-        uri: `website0/`,
         headers: { accept: 'text/html' },
         followRedirect: false,
       });
     } catch (err) {
-      error = err;
+      res = err.response;
     }
-    expect(error).to.exist;
-    expect(error.statusCode).to.equal(301);
-    expect(error.response.headers).to.have.property(
-      'location',
-      redirectLocation,
-    );
+    expect(res.statusCode).to.equal(301);
+    expect(res.headers).to.have.property('location', redirectLocation);
   });
 
   it('redirects for a custom error page stored with a website-redirect-location', async function() {
     const redirectLocation = 'https://github.com/jamhall/s3rver';
-    let error;
+    const body = '<html><body>Hello</body></html>';
+    await s3Client
+      .putObject({
+        Bucket: 'website1',
+        Key: 'error.html',
+        Body: body,
+        WebsiteRedirectLocation: redirectLocation,
+      })
+      .promise();
+    let res;
     try {
-      const body = '<html><body>Hello</body></html>';
-      await s3Client
-        .putObject({
-          Bucket: 'website1',
-          Key: 'error.html',
-          Body: body,
-          WebsiteRedirectLocation: redirectLocation,
-        })
-        .promise();
-      await request({
+      res = await request(`website1/page/`, {
         baseUrl: s3Client.config.endpoint,
-        uri: `website1/page/`,
         headers: { accept: 'text/html' },
         followRedirect: false,
       });
     } catch (err) {
-      error = err;
+      res = err.response;
     }
-    expect(error).to.exist;
-    expect(error.statusCode).to.equal(301);
-    expect(error.response.headers).to.have.property(
-      'location',
-      redirectLocation,
-    );
+    expect(res.statusCode).to.equal(301);
+    expect(res.headers).to.have.property('location', redirectLocation);
   });
 
   describe('Routing rules', () => {
     it('evaluates a single simple routing rule', async function() {
-      let error;
+      let res;
       try {
-        await request({
+        res = await request(`website2/test/key`, {
           baseUrl: s3Client.config.endpoint,
-          uri: `website2/test/key`,
           headers: { accept: 'text/html' },
           followRedirect: false,
         });
       } catch (err) {
-        error = err;
+        res = err.response;
       }
-      expect(error).to.exist;
-      expect(error.statusCode).to.equal(301);
-      expect(error.response.headers).to.have.property(
+      expect(res.statusCode).to.equal(301);
+      expect(res.headers).to.have.property(
         'location',
         s3Client.config.endpoint + '/website2/replacement/key',
       );
     });
 
     it('evaluates a multi-rule config', async function() {
-      let error;
+      let res;
       try {
-        await request({
+        res = await request(`website3/simple/key`, {
           baseUrl: s3Client.config.endpoint,
-          uri: `website3/simple/key`,
           headers: { accept: 'text/html' },
           followRedirect: false,
         });
       } catch (err) {
-        error = err;
+        res = err.response;
       }
-      expect(error).to.exist;
-      expect(error.statusCode).to.equal(301);
-      expect(error.response.headers).to.have.property(
+      expect(res.statusCode).to.equal(301);
+      expect(res.headers).to.have.property(
         'location',
         s3Client.config.endpoint + '/website3/replacement/key',
       );
     });
 
     it('evaluates a complex rule', async function() {
-      let error;
+      let res;
       try {
-        await request({
+        res = await request(`website3/complex/key`, {
           baseUrl: s3Client.config.endpoint,
-          uri: `website3/complex/key`,
           headers: { accept: 'text/html' },
           followRedirect: false,
         });
       } catch (err) {
-        error = err;
+        res = err.response;
       }
-      expect(error).to.exist;
-      expect(error.statusCode).to.equal(307);
-      expect(error.response.headers).to.have.property(
+      expect(res.statusCode).to.equal(307);
+      expect(res.headers).to.have.property(
         'location',
         'https://custom/replacement',
       );
